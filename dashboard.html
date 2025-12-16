@@ -3,35 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fleet Metrics Dashboard</title>
-    
+    <title>Fleet Status Dashboard</title>
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
     
     <style>
-        /* 2.1 Color Palette & Variables */
         :root {
-            /* Core Colors */
-            --bg-color: #f5f7fa;        /* Soft Blue-Grey Background */
-            --color-primary: #25457B;   /* Navy Blue (Brand) */
-            --color-accent: #00B8FF;    /* Cyan (Active/Highlights) */
-            --color-white: #FFFFFF;     /* Card Surface */
+            /* Branding Colors */
+            --bg-color: #f5f7fa;        /* Soft Blue-Grey */
+            --color-primary: #25457B;   /* Geotab Navy */
+            --color-accent: #00B8FF;    /* Cyan Highlight */
+            --color-white: #FFFFFF;     /* Card Background */
             --color-slate: #607690;     /* Secondary Text */
             
-            /* Status Colors */
-            --color-success: #13AA09;   /* Green (Driving/Communicating) */
-            --color-error: #FE4A3F;     /* Red (Offline/Error) */
-            --color-warning: #ff9800;   /* Orange (Stopped - implied for visual distinction) */
+            /* Status Indicators */
+            --color-success: #13AA09;   /* Green (Driving) */
+            --color-error: #FE4A3F;     /* Red (Offline) */
+            --color-warning: #ff9800;   /* Orange (Stopped) */
 
-            /* Shadows & Effects */
+            /* UI Effects */
             --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.05);
             --shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.08);
             --radius: 8px;
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
             margin: 0;
             padding: 20px;
             background-color: var(--bg-color);
@@ -41,17 +39,17 @@
             overflow: hidden; 
         }
 
-        /* Typography */
+        /* Header Styling */
         h2 {
             font-size: 1.25rem; 
             font-weight: 600;
             margin: 0 0 20px 0;
-            color: var(--color-primary); /* Navy Brand Color */
-            border-bottom: 2px solid rgba(37, 69, 123, 0.1); /* Subtle primary border */
+            color: var(--color-primary);
+            border-bottom: 2px solid rgba(37, 69, 123, 0.1);
             padding-bottom: 10px;
         }
 
-        /* Layout */
+        /* Grid Layout */
         .dashboard-container {
             height: 100%;
             display: flex;
@@ -66,7 +64,7 @@
             gap: 20px;
         }
 
-        /* Cards */
+        /* Metric Cards */
         .metric-card {
             background: var(--color-white);
             border-radius: var(--radius);
@@ -76,11 +74,9 @@
             align-items: center;
             justify-content: center;
             box-shadow: var(--shadow-card);
-            border: none; /* Clean look, shadow only */
+            position: relative;
             transition: all 0.2s ease-in-out;
             cursor: default;
-            position: relative;
-            overflow: hidden;
         }
 
         .metric-card:hover {
@@ -88,18 +84,18 @@
             box-shadow: var(--shadow-hover);
         }
 
-        /* Decorative top border for cards to add color pop */
+        /* Top Color Bar */
         .metric-card::after {
             content: '';
             position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 4px;
-            background: var(--border-color, #e0e0e0); /* Default fallback */
+            top: 0; left: 0; width: 100%; height: 4px;
         }
+        .card-total::after { background: var(--color-primary); }
+        .card-good::after { background: var(--color-success); }
+        .card-warn::after { background: var(--color-warning); }
+        .card-bad::after { background: var(--color-error); }
 
-        /* KPI Values */
+        /* Values & Labels */
         .kpi-value {
             font-size: 2.5rem;
             font-weight: 700;
@@ -107,7 +103,6 @@
             line-height: 1;
             color: #333;
         }
-
         .kpi-label {
             font-size: 0.9rem;
             color: var(--color-slate);
@@ -116,21 +111,8 @@
             letter-spacing: 0.5px;
         }
 
-        /* Status Coloring */
-        /* Specific overrides for value colors if desired, or keep generic dark */
-        .status-total .kpi-value { color: var(--color-primary); }
-        .status-good .kpi-value { color: var(--color-success); }
-        .status-bad .kpi-value { color: var(--color-error); }
-        .status-warn .kpi-value { color: var(--color-warning); }
-
-        /* Card Top Borders */
-        .card-total::after { background: var(--color-primary); }
-        .card-good::after { background: var(--color-success); }
-        .card-bad::after { background: var(--color-error); }
-        .card-warn::after { background: var(--color-warning); }
-
-        /* Loading & Error */
-        .loading-container, .error-container {
+        /* Loading & Error States */
+        .status-container {
             display: flex;
             flex-direction: column;
             align-items: center;
@@ -139,19 +121,16 @@
             color: var(--color-slate);
             text-align: center;
         }
-
-        .error-container {
+        .error-box {
             color: var(--color-error);
             background: #FFF5F5;
             border: 1px solid #FFDCDC;
             border-radius: var(--radius);
             padding: 20px;
         }
-
         .debug-text {
             font-size: 0.75rem;
             font-family: monospace;
-            color: var(--color-slate);
             opacity: 0.7;
             margin-top: 10px;
         }
@@ -169,7 +148,9 @@
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
 
+            // --- DATA FETCHING ---
             useEffect(() => {
+                // 1. Extract session credentials from URL (passed by Bridge)
                 const params = new URLSearchParams(window.location.search);
                 const server = params.get('server');
                 const database = params.get('database');
@@ -177,20 +158,18 @@
                 const userName = params.get('userName');
 
                 if (!server || !sessionId) {
-                    setError("Missing credentials.");
+                    setError("Session credentials missing in URL.");
                     setLoading(false);
                     return;
                 }
 
-                // API Endpoint
+                // 2. Prepare JSON-RPC Request
                 const rpcUrl = `https://${server}/apiv1`;
-                
-                // JSON-RPC Payload
                 const payload = {
                     method: "Get",
                     params: {
                         typeName: "DeviceStatusInfo",
-                        search: {}, // Get all devices
+                        search: {}, // Fetch ALL visible devices
                         credentials: {
                             database: database,
                             sessionId: sessionId,
@@ -199,6 +178,7 @@
                     }
                 };
 
+                // 3. Execute Fetch
                 const fetchData = async () => {
                     try {
                         const response = await fetch(rpcUrl, {
@@ -214,7 +194,7 @@
                         setDeviceData(json.result || []);
                         setLoading(false);
                     } catch (err) {
-                        console.error("Fetch Error:", err);
+                        console.error("API Error:", err);
                         setError(err.message);
                         setLoading(false);
                     }
@@ -223,6 +203,7 @@
                 fetchData();
             }, []);
 
+            // --- METRIC CALCULATION ---
             const metrics = useMemo(() => {
                 let total = 0, started = 0, stopped = 0, offline = 0;
 
@@ -242,57 +223,64 @@
                 return { total, started, stopped, offline };
             }, [deviceData]);
 
+            // --- RENDER STATES ---
+            
+            // 1. Loading
             if (loading) {
                 return (
-                    <div className="loading-container">
+                    <div className="status-container">
                         <div style={{fontWeight: '500', color: 'var(--color-primary)'}}>Connecting to Fleet...</div>
-                        <div className="debug-text">Loading DeviceStatusInfo</div>
+                        <div className="debug-text">Retrieving DeviceStatusInfo</div>
                     </div>
                 );
             }
 
+            // 2. Error
             if (error) {
                 return (
-                    <div className="error-container">
-                        <strong>Connection Error</strong>
-                        <div className="debug-text">{error}</div>
+                    <div className="status-container">
+                        <div className="error-box">
+                            <strong>Connection Error</strong>
+                            <div className="debug-text">{error}</div>
+                        </div>
                     </div>
                 );
             }
 
+            // 3. Success (Dashboard)
             return (
                 <div className="dashboard-container">
                     <h2>Fleet Overview</h2>
                     
                     <div className="metrics-grid">
                         {/* Total Vehicles */}
-                        <div className="metric-card card-total status-total">
-                            <div className="kpi-value">{metrics.total}</div>
+                        <div className="metric-card card-total">
+                            <div className="kpi-value" style={{color: 'var(--color-primary)'}}>{metrics.total}</div>
                             <div className="kpi-label">Total Fleet</div>
                         </div>
 
-                        {/* Started (Driving) - Green */}
-                        <div className="metric-card card-good status-good">
-                            <div className="kpi-value">{metrics.started}</div>
+                        {/* Started (Green) */}
+                        <div className="metric-card card-good">
+                            <div className="kpi-value" style={{color: 'var(--color-success)'}}>{metrics.started}</div>
                             <div className="kpi-label">Active / Driving</div>
                         </div>
 
-                        {/* Stopped - Orange (Implied Warning/Idle) */}
-                        <div className="metric-card card-warn status-warn">
-                            <div className="kpi-value">{metrics.stopped}</div>
+                        {/* Stopped (Orange) */}
+                        <div className="metric-card card-warn">
+                            <div className="kpi-value" style={{color: 'var(--color-warning)'}}>{metrics.stopped}</div>
                             <div className="kpi-label">Stopped</div>
                         </div>
 
-                        {/* Offline - Red (Error) */}
-                        <div className="metric-card card-bad status-bad">
-                            <div className="kpi-value">{metrics.offline}</div>
+                        {/* Offline (Red) */}
+                        <div className="metric-card card-bad">
+                            <div className="kpi-value" style={{color: 'var(--color-error)'}}>{metrics.offline}</div>
                             <div className="kpi-label">Offline</div>
                         </div>
                     </div>
 
                     <div style={{marginTop: 'auto', textAlign: 'center', paddingTop: '20px'}}>
                         <div className="debug-text">
-                            Data Source: DeviceStatusInfo • Geotab API
+                            Integrator: Farin Nugraha • Geotab API
                         </div>
                     </div>
                 </div>
