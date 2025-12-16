@@ -9,8 +9,6 @@
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
     
-    <script src="https://cdn.jsdelivr.net/npm/mg-api-js@2.4.0/dist/mg-api-js.min.js"></script>
-    
     <style>
         body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 20px; background-color: #f9f9f9; }
         .card { background: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); padding: 15px; text-align: center; }
@@ -30,81 +28,71 @@
         const { useState, useEffect, useMemo } = React;
 
         function App() {
-            const [api, setApi] = useState(null);
             const [deviceData, setDeviceData] = useState([]);
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
 
-            // 1. Initialize API
             useEffect(() => {
-                // Check if the library loaded correctly
-                if (typeof GeotabApi === 'undefined' && typeof window.GeotabApi === 'undefined') {
-                    setError("Error: 'mg-api-js' library failed to load.");
+                // 1. Extract Credentials from URL
+                const params = new URLSearchParams(window.location.search);
+                const server = params.get('server');
+                const database = params.get('database');
+                const sessionId = params.get('sessionId');
+                const userName = params.get('userName');
+
+                if (!server || !sessionId) {
+                    setError("Missing session credentials in URL.");
                     setLoading(false);
                     return;
                 }
 
-                // Get the class constructor (handle both global scopes)
-                const ApiClass = window.GeotabApi || GeotabApi;
-
-                const params = new URLSearchParams(window.location.search);
-                const credentials = {
-                    server: params.get('server'),
-                    database: params.get('database'),
-                    sessionId: params.get('sessionId')
+                // 2. Define the JSON-RPC Request
+                const rpcUrl = `https://${server}/apiv1`;
+                const payload = {
+                    method: "Get",
+                    params: {
+                        typeName: "DeviceStatusInfo",
+                        search: {
+                            deviceSearch: { id: "ActiveDevice" } 
+                        },
+                        credentials: {
+                            database: database,
+                            sessionId: sessionId,
+                            userName: userName
+                        }
+                    }
                 };
 
-                if (credentials.sessionId && credentials.server) {
-                    try {
-                        console.log("DASHBOARD: Authenticating with", credentials.server);
-                        const geotabApi = new ApiClass({
-                            authentication: { credentials },
-                            path: credentials.server
-                        });
-                        setApi(geotabApi);
-                    } catch (err) {
-                        console.error("DASHBOARD: Init failed", err);
-                        setError("Failed to initialize API: " + err.message);
-                        setLoading(false);
-                    }
-                } else {
-                    setError("No session credentials found in URL.");
-                    setLoading(false);
-                }
-            }, []);
-
-            // 2. Fetch Data
-            useEffect(() => {
-                if (!api) return;
-                
+                // 3. Execute Fetch (No Library Needed)
                 const fetchData = async () => {
                     try {
-                        console.log("DASHBOARD: Fetching DeviceStatusInfo...");
-                        
-                        // Using 'call' with async/await
-                        const results = await api.call("Get", {
-                            typeName: "DeviceStatusInfo",
-                            search: {
-                                deviceSearch: {
-                                    id: "ActiveDevice" 
-                                }
-                            }
+                        console.log("DASHBOARD: Fetching via native API...");
+                        const response = await fetch(rpcUrl, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
                         });
-                        
-                        console.log("DASHBOARD: Data received", results);
-                        setDeviceData(results);
+
+                        const json = await response.json();
+
+                        if (json.error) {
+                            throw new Error(json.error.message || "Geotab API Error");
+                        }
+
+                        console.log("DASHBOARD: Data received", json.result);
+                        setDeviceData(json.result);
                         setLoading(false);
                     } catch (err) {
-                        console.error("DASHBOARD: API Call Error", err);
-                        setError("API Error: " + (err.message || JSON.stringify(err)));
+                        console.error("DASHBOARD: Fetch failed", err);
+                        setError("API Call Failed: " + err.message);
                         setLoading(false);
                     }
                 };
 
                 fetchData();
-            }, [api]);
+            }, []);
 
-            // 3. Calculate Metrics
+            // 4. Calculate Metrics
             const metrics = useMemo(() => {
                 let total = 0, started = 0, stopped = 0, offline = 0;
 
@@ -115,7 +103,7 @@
                     } else if (d.isDriving) {
                         started++;
                     } else {
-                        stopped++; // Stopped includes Idling in this data view
+                        stopped++;
                     }
                 });
                 return { total, started, stopped, offline };
