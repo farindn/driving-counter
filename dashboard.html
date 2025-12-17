@@ -4,27 +4,73 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fleet Status Dashboard</title>
-    
     <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
     
     <style>
-        /* (Keep your existing styles here - unchanged) */
-        :root { --bg-color: #f5f7fa; --color-primary: #25457B; --color-white: #FFFFFF; --color-slate: #607690; --color-success: #13AA09; --color-error: #FE4A3F; --color-warning: #ff9800; --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.05); --radius: 8px; }
-        body { margin: 0; padding: 20px; background-color: var(--bg-color); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; color: #333; height: 100vh; box-sizing: border-box; overflow: hidden; }
-        h2 { font-size: 1.25rem; font-weight: 600; margin: 0 0 20px 0; color: var(--color-primary); border-bottom: 2px solid rgba(37, 69, 123, 0.1); padding-bottom: 10px; }
-        .dashboard-container { height: 100%; display: flex; flex-direction: column; max-width: 800px; margin: 0 auto; }
-        .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        .metric-card { background: var(--color-white); border-radius: var(--radius); padding: 24px; display: flex; flex-direction: column; align-items: center; justify-content: center; box-shadow: var(--shadow-card); position: relative; cursor: default; }
-        .metric-card::after { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 4px; }
+        :root {
+            /* Core Palette */
+            --bg-color: #f5f7fa;
+            --color-primary: #25457B;
+            --color-white: #FFFFFF;
+            --color-slate: #607690;
+            
+            /* Status Colors */
+            --color-success: #13AA09; /* Driving */
+            --color-error: #FE4A3F;   /* Not Communicating */
+            --color-warning: #ff9800; /* Stopped */
+
+            /* UI Tokens */
+            --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.05);
+            --radius: 8px;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            margin: 0; padding: 20px; background-color: var(--bg-color);
+            color: #333; height: 100vh; box-sizing: border-box; overflow: hidden; 
+        }
+
+        h2 {
+            font-size: 1.25rem; font-weight: 600; margin: 0 0 20px 0;
+            color: var(--color-primary); border-bottom: 2px solid rgba(37, 69, 123, 0.1); padding-bottom: 10px;
+        }
+
+        .dashboard-container {
+            height: 100%; display: flex; flex-direction: column; max-width: 800px; margin: 0 auto;
+        }
+
+        .metrics-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+        }
+
+        .metric-card {
+            background: var(--color-white); border-radius: var(--radius); padding: 24px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            box-shadow: var(--shadow-card); position: relative; cursor: default;
+        }
+
+        /* Decorative Top Borders */
+        .metric-card::after {
+            content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 4px;
+        }
         .card-total::after { background: var(--color-primary); }
         .card-good::after { background: var(--color-success); }
         .card-warn::after { background: var(--color-warning); }
         .card-bad::after { background: var(--color-error); }
-        .kpi-value { font-size: 2.5rem; font-weight: 700; margin-bottom: 8px; line-height: 1; color: #333; }
-        .kpi-label { font-size: 0.9rem; color: var(--color-slate); font-weight: 500; text-transform: uppercase; }
-        .status-container { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--color-slate); text-align: center; }
+
+        .kpi-value {
+            font-size: 2.5rem; font-weight: 700; margin-bottom: 8px; line-height: 1; color: #333;
+        }
+        .kpi-label {
+            font-size: 0.9rem; color: var(--color-slate); font-weight: 500; text-transform: uppercase;
+        }
+
+        /* Loading & Error UI */
+        .status-container {
+            display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--color-slate); text-align: center;
+        }
         .debug-text { font-size: 0.75rem; font-family: monospace; opacity: 0.7; margin-top: 10px; }
     </style>
 </head>
@@ -36,56 +82,78 @@
         const { useState, useEffect } = React;
 
         function App() {
+            // UI State
             const [metrics, setMetrics] = useState({ total: 0, started: 0, stopped: 0, offline: 0 });
             const [loading, setLoading] = useState(true);
             const [statusText, setStatusText] = useState("Initializing...");
             const [error, setError] = useState(null);
-            
-            // Credentials State
+
+            // Logic State
             const [credentials, setCredentials] = useState(null);
-            // Current Active Groups (State that triggers re-fetch)
             const [activeGroups, setActiveGroups] = useState(null); 
 
             // --- API HELPER ---
             async function fetchFromGeotab(method, params, creds) {
                 const serverHost = creds.server || window.location.hostname;
                 const rpcUrl = `https://${serverHost}/apiv1`;
+                
                 const payload = {
                     method: method,
                     params: { 
                         ...params, 
-                        credentials: { database: creds.database, sessionId: creds.sessionId, userName: creds.userName } 
+                        credentials: {
+                            database: creds.database,
+                            sessionId: creds.sessionId,
+                            userName: creds.userName
+                        } 
                     }
                 };
+
                 const response = await fetch(rpcUrl, {
-                    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
                 });
+
                 if (!response.ok) throw new Error(`API call failed: ${response.statusText}`);
                 const json = await response.json();
                 if (json.error) throw new Error(json.error.message || "Unknown API error");
                 return json.result || [];
             }
 
-            // --- STEP 1: FETCH INVENTORY ---
+            // --- STEP 1: FETCH INVENTORY (Reference Logic + Group Filter) ---
             async function fetchAllDevices(creds, groupIds) {
                 let allResults = [];
                 const resultsLimit = 5000;
                 let offsetName = null;
                 let lastId = null;
-                
-                // Map "GroupA,GroupB" string to API object
-                const groupFilter = groupIds ? groupIds.split(',').map(id => ({ id: id.trim() })) : [];
+
+                // Parse "GroupA,GroupB" string into API Object [{id:"GroupA"}]
+                const groupFilter = groupIds 
+                    ? groupIds.split(',').map(id => ({ id: id.trim() }))
+                    : [];
 
                 while (true) {
-                    const searchParams = { fromDate: new Date().toISOString() };
-                    if (groupFilter.length > 0) searchParams.groups = groupFilter;
+                    const searchParams = {
+                        fromDate: new Date().toISOString() // Active devices only
+                    };
+
+                    // Apply Group Filter if present
+                    if (groupFilter.length > 0) {
+                        searchParams.groups = groupFilter;
+                    }
 
                     const params = {
                         typeName: "Device",
                         search: searchParams,
                         resultsLimit: resultsLimit,
-                        sort: { sortBy: "name", sortDirection: "asc" }
+                        sort: {
+                            sortBy: "name",
+                            sortDirection: "asc"
+                        }
                     };
+
+                    // Apply Pagination Cursors
                     if (offsetName !== null) {
                         params.sort.offset = offsetName;
                         params.sort.lastId = lastId;
@@ -95,39 +163,63 @@
 
                     if (devices && devices.length > 0) {
                         allResults.push(...devices);
-                        if (devices.length < resultsLimit) break;
+
+                        if (devices.length < resultsLimit) {
+                            break;
+                        }
+                        
                         const lastDevice = devices[devices.length - 1];
                         offsetName = lastDevice.name;
                         lastId = lastDevice.id;
-                    } else { break; }
+                    } else {
+                        break;
+                    }
                 }
                 return allResults;
             }
 
-            // --- STEP 2: FETCH STATUS ---
+            // --- STEP 2: FETCH STATUS SUMMARY (Reference Logic) ---
             async function loadFleetSummary(allDevices, creds) {
                 if (allDevices.length === 0) return { total: 0, started: 0, stopped: 0, offline: 0 };
                 
+                // Get Status ONLY for the devices found in Step 1
                 const deviceIds = allDevices.map(d => ({ id: d.id }));
+                
                 const statusInfo = await fetchFromGeotab("Get", {
                     typeName: "DeviceStatusInfo",
-                    search: { deviceSearch: { ids: deviceIds }, excludeUntrackedAssets: true }
+                    search: {
+                        deviceSearch: { ids: deviceIds },
+                        excludeUntrackedAssets: true
+                    }
                 }, creds);
 
+                // --- CALCULATION LOGIC ---
+                // 1. Communicating
                 const communicatingCount = statusInfo.filter(s => s.isDeviceCommunicating).length;
-                const drivingCount = statusInfo.filter(s => s.isDriving).length;
-                const totalCount = allDevices.length;
                 
+                // 2. Started (Driving)
+                const drivingCount = statusInfo.filter(s => s.isDriving).length;
+
+                // 3. Total (Strictly from Inventory)
+                const totalCount = allDevices.length;
+
+                // 4. Derived: Offline
+                const offlineCount = totalCount - communicatingCount;
+
+                // 5. Derived: Stopped (Communicating but not Driving)
+                const stoppedCount = communicatingCount - drivingCount;
+
                 return {
                     total: totalCount,
                     started: drivingCount,
-                    stopped: communicatingCount - drivingCount,
-                    offline: totalCount - communicatingCount
+                    stopped: stoppedCount,
+                    offline: offlineCount
                 };
             }
 
-            // --- INITIAL SETUP (Run Once) ---
+            // --- INITIALIZATION ---
             useEffect(() => {
+                // 1. Get Init Params from URL
                 const params = new URLSearchParams(window.location.search);
                 const creds = {
                     server: params.get('server'),
@@ -143,15 +235,14 @@
                 }
 
                 setCredentials(creds);
-                // Set initial groups from URL
-                setActiveGroups(params.get('groups'));
+                setActiveGroups(params.get('groups')); // Set initial groups
 
-                // LISTENER: Listen for messages from Bridge.html
+                // 2. Setup PostMessage Listener (For Dynamic Updates)
                 const handleMessage = (event) => {
-                    // Safety check origin if possible in production
+                    // In production, verify event.origin here for added security
                     if (event.data && event.data.type === "FILTER_UPDATE") {
                         console.log("DASHBOARD: Received new group filter:", event.data.groups);
-                        setActiveGroups(event.data.groups); // This triggers re-fetch
+                        setActiveGroups(event.data.groups); // Triggers re-fetch
                     }
                 };
 
@@ -159,22 +250,25 @@
                 return () => window.removeEventListener("message", handleMessage);
             }, []);
 
-            // --- DATA SYNC (Runs on Init & When activeGroups changes) ---
+            // --- DATA SYNC (Triggered on Load & Group Change) ---
             useEffect(() => {
                 if (!credentials) return;
 
                 const runDataSync = async () => {
                     setLoading(true);
                     try {
-                        setStatusText("Loading Inventory...");
+                        // Phase 1: Inventory
+                        setStatusText("Updating Active Inventory...");
                         const allDevices = await fetchAllDevices(credentials, activeGroups);
                         console.log(`Inventory Loaded: ${allDevices.length} vehicles.`);
 
+                        // Phase 2: Status
                         setStatusText(`Analyzing Status...`);
                         const finalMetrics = await loadFleetSummary(allDevices, credentials);
 
                         setMetrics(finalMetrics);
                         setLoading(false);
+
                     } catch (err) {
                         console.error("Dashboard Error:", err);
                         setError(err.message);
@@ -183,13 +277,13 @@
                 };
 
                 runDataSync();
-            }, [credentials, activeGroups]); // Dependency on activeGroups makes it reactive!
+            }, [credentials, activeGroups]); // Re-runs whenever Groups change!
 
-
+            // --- RENDER ---
             if (loading) {
                 return (
                     <div className="status-container">
-                        <div style={{fontWeight: '500', color: 'var(--color-primary)'}}>Updating...</div>
+                        <div style={{fontWeight: '500', color: 'var(--color-primary)'}}>Updating Data...</div>
                         <div className="debug-text">{statusText}</div>
                     </div>
                 );
@@ -198,7 +292,7 @@
             if (error) {
                 return (
                     <div className="status-container">
-                        <div style={{color: 'var(--color-error)'}}><strong>Error</strong></div>
+                        <div style={{color: 'var(--color-error)'}}><strong>Connection Error</strong></div>
                         <div className="debug-text">{error}</div>
                     </div>
                 );
@@ -206,25 +300,35 @@
 
             return (
                 <div className="dashboard-container">
+                    
                     <h2>Fleet Overview</h2>
+                    
                     <div className="metrics-grid">
+                        {/* Total */}
                         <div className="metric-card card-total">
                             <div className="kpi-value" style={{color: 'var(--color-primary)'}}>{metrics.total}</div>
                             <div className="kpi-label">Total Vehicles</div>
                         </div>
+
+                        {/* Started */}
                         <div className="metric-card card-good">
                             <div className="kpi-value" style={{color: 'var(--color-success)'}}>{metrics.started}</div>
                             <div className="kpi-label">Vehicles Started</div>
                         </div>
+
+                        {/* Stopped */}
                         <div className="metric-card card-warn">
                             <div className="kpi-value" style={{color: 'var(--color-warning)'}}>{metrics.stopped}</div>
                             <div className="kpi-label">Vehicles Stopped</div>
                         </div>
+
+                        {/* Offline */}
                         <div className="metric-card card-bad">
                             <div className="kpi-value" style={{color: 'var(--color-error)'}}>{metrics.offline}</div>
                             <div className="kpi-label">Not Communicating</div>
                         </div>
                     </div>
+
                     <div style={{marginTop: 'auto', textAlign: 'center', paddingTop: '20px'}}>
                         <div className="debug-text">
                             Filter: {activeGroups ? "Active Group Selection" : "Entire Fleet"}
