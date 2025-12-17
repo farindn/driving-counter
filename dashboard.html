@@ -10,18 +10,13 @@
     
     <style>
         :root {
-            /* Core Palette */
             --bg-color: #f5f7fa;
             --color-primary: #25457B;
             --color-white: #FFFFFF;
             --color-slate: #607690;
-            
-            /* Status Colors */
             --color-success: #13AA09; /* Driving */
-            --color-error: #FE4A3F;   /* Not Communicating */
+            --color-error: #FE4A3F;   /* Offline */
             --color-warning: #ff9800; /* Stopped */
-
-            /* UI Tokens */
             --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.05);
             --radius: 8px;
         }
@@ -67,7 +62,6 @@
             font-size: 0.9rem; color: var(--color-slate); font-weight: 500; text-transform: uppercase;
         }
 
-        /* Loading & Error UI */
         .status-container {
             display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--color-slate); text-align: center;
         }
@@ -83,7 +77,7 @@
 
         function App() {
             // UI State
-            const [metrics, setMetrics] = useState({ total: 0, started: 0, stopped: 0, offline: 0 });
+            const [metrics, setMetrics] = useState({ total: 0, driving: 0, stopped: 0, offline: 0 });
             const [loading, setLoading] = useState(true);
             const [statusText, setStatusText] = useState("Initializing...");
             const [error, setError] = useState(null);
@@ -121,14 +115,14 @@
                 return json.result || [];
             }
 
-            // --- STEP 1: FETCH INVENTORY (Reference Logic + Group Filter) ---
+            // --- STEP 1: FETCH INVENTORY (With Group Filter) ---
             async function fetchAllDevices(creds, groupIds) {
                 let allResults = [];
                 const resultsLimit = 5000;
                 let offsetName = null;
                 let lastId = null;
 
-                // Parse "GroupA,GroupB" string into API Object [{id:"GroupA"}]
+                // Parse Groups
                 const groupFilter = groupIds 
                     ? groupIds.split(',').map(id => ({ id: id.trim() }))
                     : [];
@@ -138,7 +132,7 @@
                         fromDate: new Date().toISOString() // Active devices only
                     };
 
-                    // Apply Group Filter if present
+                    // Apply Group Filter
                     if (groupFilter.length > 0) {
                         searchParams.groups = groupFilter;
                     }
@@ -147,13 +141,9 @@
                         typeName: "Device",
                         search: searchParams,
                         resultsLimit: resultsLimit,
-                        sort: {
-                            sortBy: "name",
-                            sortDirection: "asc"
-                        }
+                        sort: { sortBy: "name", sortDirection: "asc" }
                     };
 
-                    // Apply Pagination Cursors
                     if (offsetName !== null) {
                         params.sort.offset = offsetName;
                         params.sort.lastId = lastId;
@@ -163,11 +153,7 @@
 
                     if (devices && devices.length > 0) {
                         allResults.push(...devices);
-
-                        if (devices.length < resultsLimit) {
-                            break;
-                        }
-                        
+                        if (devices.length < resultsLimit) break;
                         const lastDevice = devices[devices.length - 1];
                         offsetName = lastDevice.name;
                         lastId = lastDevice.id;
@@ -178,14 +164,19 @@
                 return allResults;
             }
 
-            // --- STEP 2: FETCH STATUS SUMMARY (Reference Logic) ---
-            async function loadFleetSummary(allDevices, creds) {
-                if (allDevices.length === 0) return { total: 0, started: 0, stopped: 0, offline: 0 };
+            // --- STEP 2: FETCH STATUS & CALCULATE METRICS ---
+            async function calculateFleetMetrics(allDevices, creds) {
+                const totalFleet = allDevices.length;
                 
-                // Get Status ONLY for the devices found in Step 1
+                if (totalFleet === 0) {
+                    return { total: 0, driving: 0, stopped: 0, offline: 0 };
+                }
+
+                // 1. Get IDs from the FILTERED inventory
                 const deviceIds = allDevices.map(d => ({ id: d.id }));
-                
-                const statusInfo = await fetchFromGeotab("Get", {
+
+                // 2. Fetch Status ONLY for these IDs
+                const statusResults = await fetchFromGeotab("Get", {
                     typeName: "DeviceStatusInfo",
                     search: {
                         deviceSearch: { ids: deviceIds },
@@ -193,33 +184,50 @@
                     }
                 }, creds);
 
-                // --- CALCULATION LOGIC ---
-                // 1. Communicating
-                const communicatingCount = statusInfo.filter(s => s.isDeviceCommunicating).length;
-                
-                // 2. Started (Driving)
-                const drivingCount = statusInfo.filter(s => s.isDriving).length;
+                // 3. Create Lookup Map for efficiency
+                // Map: DeviceID -> Status Object
+                const statusMap = new Map();
+                statusResults.forEach(s => statusMap.set(s.device.id, s));
 
-                // 3. Total (Strictly from Inventory)
-                const totalCount = allDevices.length;
+                let driving = 0;
+                let stopped = 0;
+                let offline = 0;
 
-                // 4. Derived: Offline
-                const offlineCount = totalCount - communicatingCount;
+                // 4. Iterate over the FILTERED Inventory List
+                // This ensures we strictly count only what is in the current filter.
+                allDevices.forEach(device => {
+                    const status = statusMap.get(device.id);
 
-                // 5. Derived: Stopped (Communicating but not Driving)
-                const stoppedCount = communicatingCount - drivingCount;
+                    if (!status) {
+                        // Edge Case: Device is in inventory but returned no status.
+                        // Strictly treating this as "Offline" (Not Communicating).
+                        offline++;
+                    } else {
+                        // Apply Logic
+                        if (status.isDeviceCommunicating === false) {
+                            offline++;
+                        } else {
+                            // Communicating is TRUE
+                            if (status.isDriving === true) {
+                                driving++;
+                            } else {
+                                // Communicating + Not Driving = Stopped
+                                stopped++; 
+                            }
+                        }
+                    }
+                });
 
                 return {
-                    total: totalCount,
-                    started: drivingCount,
-                    stopped: stoppedCount,
-                    offline: offlineCount
+                    total: totalFleet,
+                    driving: driving,
+                    stopped: stopped,
+                    offline: offline
                 };
             }
 
             // --- INITIALIZATION ---
             useEffect(() => {
-                // 1. Get Init Params from URL
                 const params = new URLSearchParams(window.location.search);
                 const creds = {
                     server: params.get('server'),
@@ -235,14 +243,13 @@
                 }
 
                 setCredentials(creds);
-                setActiveGroups(params.get('groups')); // Set initial groups
+                setActiveGroups(params.get('groups'));
 
-                // 2. Setup PostMessage Listener (For Dynamic Updates)
+                // Listener for Filter Changes
                 const handleMessage = (event) => {
-                    // In production, verify event.origin here for added security
                     if (event.data && event.data.type === "FILTER_UPDATE") {
-                        console.log("DASHBOARD: Received new group filter:", event.data.groups);
-                        setActiveGroups(event.data.groups); // Triggers re-fetch
+                        console.log("DASHBOARD: Group Filter Updated:", event.data.groups);
+                        setActiveGroups(event.data.groups);
                     }
                 };
 
@@ -250,21 +257,21 @@
                 return () => window.removeEventListener("message", handleMessage);
             }, []);
 
-            // --- DATA SYNC (Triggered on Load & Group Change) ---
+            // --- DATA SYNC ---
             useEffect(() => {
                 if (!credentials) return;
 
                 const runDataSync = async () => {
                     setLoading(true);
                     try {
-                        // Phase 1: Inventory
-                        setStatusText("Updating Active Inventory...");
+                        // 1. Fetch Inventory (Filtered)
+                        setStatusText("Syncing Fleet Inventory...");
                         const allDevices = await fetchAllDevices(credentials, activeGroups);
-                        console.log(`Inventory Loaded: ${allDevices.length} vehicles.`);
+                        console.log(`Filtered Fleet Size: ${allDevices.length}`);
 
-                        // Phase 2: Status
+                        // 2. Calculate Metrics (Strict Logic)
                         setStatusText(`Analyzing Status...`);
-                        const finalMetrics = await loadFleetSummary(allDevices, credentials);
+                        const finalMetrics = await calculateFleetMetrics(allDevices, credentials);
 
                         setMetrics(finalMetrics);
                         setLoading(false);
@@ -277,7 +284,7 @@
                 };
 
                 runDataSync();
-            }, [credentials, activeGroups]); // Re-runs whenever Groups change!
+            }, [credentials, activeGroups]); 
 
             // --- RENDER ---
             if (loading) {
@@ -304,28 +311,28 @@
                     <h2>Fleet Overview</h2>
                     
                     <div className="metrics-grid">
-                        {/* Total */}
+                        {/* Total Fleet */}
                         <div className="metric-card card-total">
                             <div className="kpi-value" style={{color: 'var(--color-primary)'}}>{metrics.total}</div>
-                            <div className="kpi-label">Total Vehicles</div>
+                            <div className="kpi-label">Total Fleet</div>
                         </div>
 
-                        {/* Started */}
+                        {/* Driving */}
                         <div className="metric-card card-good">
-                            <div className="kpi-value" style={{color: 'var(--color-success)'}}>{metrics.started}</div>
-                            <div className="kpi-label">Vehicles Started</div>
+                            <div className="kpi-value" style={{color: 'var(--color-success)'}}>{metrics.driving}</div>
+                            <div className="kpi-label">Driving</div>
                         </div>
 
                         {/* Stopped */}
                         <div className="metric-card card-warn">
                             <div className="kpi-value" style={{color: 'var(--color-warning)'}}>{metrics.stopped}</div>
-                            <div className="kpi-label">Vehicles Stopped</div>
+                            <div className="kpi-label">Stopped</div>
                         </div>
 
                         {/* Offline */}
                         <div className="metric-card card-bad">
                             <div className="kpi-value" style={{color: 'var(--color-error)'}}>{metrics.offline}</div>
-                            <div className="kpi-label">Not Communicating</div>
+                            <div className="kpi-label">Offline</div>
                         </div>
                     </div>
 
