@@ -2,136 +2,104 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <title>Fleet Status Map Add-In Bridge</title>
-    </head>
+    <title>Geotab Map Add-In Bridge</title>
+</head>
 <body>
     
     <div id="geotab-map-addin-container" style="height:100vh; width:100%; overflow:hidden; position: relative;">
         <div id="loading-overlay" style="position:absolute; top:0; left:0; width:100%; height:100%; background:white; z-index:10; display:flex; flex-direction:column; justify-content:center; align-items:center; font-family: sans-serif;">
             <h3 style="color:#25457B;">Fleet Status Overview</h3>
-            <p id="debug-status" style="color:#666; font-size:12px;">Initializing secure connection...</p>
-            <p id="debug-sub" style="color:#999; font-size:10px;">(Please wait)</p>
+            <p id="debug-status" style="color:#666; font-size:12px;">Syncing...</p>
         </div>
     </div>
 
     <script type="text/javascript">
-        console.log("BRIDGE: Fleet Status Add-In Loaded.");
-
-        /**
-         * MAIN ADD-IN FACTORY
-         * Geotab calls this function to initialize the Add-In.
-         * Signature: (element, services)
-         */
         var fleetStatusAddin = function (element, services) {
             
-            // --- CONFIGURATION ---
-            // The URL where the React Dashboard is hosted
             var DASHBOARD_URL = "https://farindn.github.io/vehicle-status-addin/dashboard.html"; 
-            
-            // --- STATE MANAGEMENT ---
             var isRendered = false;
+            var iframeRef = null; // Store reference to talk to it later
             
-            // Extract the API Service from the Geotab context
-            // Safety check: Ensure services object exists
             var apiService = (services && services.api) ? services.api : null;
+            var pageService = (services && services.page) ? services.page : null;
 
-            /**
-             * RENDER FUNCTION
-             * Handles authentication and IFrame injection
-             */
+            // --- HELPER: Send Data to React ---
+            var sendGroupUpdate = function(groups) {
+                if (!iframeRef || !iframeRef.contentWindow) return;
+                
+                var groupIds = groups.map(function(g) { return g.id; }).join(",");
+                console.log("BRIDGE: Sending new groups to React:", groupIds);
+                
+                iframeRef.contentWindow.postMessage({
+                    type: "FILTER_UPDATE",
+                    groups: groupIds
+                }, "*"); // In production, replace '*' with your specific DASHBOARD_URL origin for security
+            };
+
             var renderDashboard = function() {
-                // Prevent double-rendering
                 if (isRendered) return;
                 
                 var container = document.getElementById("geotab-map-addin-container");
-                var status = document.getElementById("debug-status");
                 var overlay = document.getElementById("loading-overlay");
 
-                // 1. Check DOM Readiness
-                if (!container || !status) {
-                    setTimeout(renderDashboard, 200); // Retry if DOM isn't ready
-                    return;
-                }
-
-                status.innerText = "Requesting Session Token...";
+                if (!container) { setTimeout(renderDashboard, 200); return; }
                 
-                if (!apiService) {
-                    status.innerText = "Error: Geotab API Service Not Found";
-                    console.error("BRIDGE: Critical Error - services.api is missing", services);
-                    return;
-                }
+                if (!apiService || !pageService) return;
 
-                // 2. Get Session (Using Promise API)
-                apiService.getSession()
-                    .then(function(session) {
-                        console.log("BRIDGE: Session Authenticated.", session.userName);
-                        
-                        // 3. Construct Secure IFrame URL
-                        var server = window.location.hostname; // Current Geotab server
-                        var iframeUrl = DASHBOARD_URL + 
-                                        "?userName=" + encodeURIComponent(session.userName) + 
-                                        "&sessionId=" + encodeURIComponent(session.sessionId) + 
-                                        "&database=" + encodeURIComponent(session.database) + 
-                                        "&server=" + encodeURIComponent(server);
+                Promise.all([
+                    apiService.getSession(),
+                    pageService.getFilterState()
+                ]).then(function(results) {
+                    var session = results[0];
+                    var filterGroups = results[1];
+                    var groupIds = filterGroups.map(function(g) { return g.id; }).join(",");
+                    var server = window.location.hostname;
 
-                        // 4. Create and Inject IFrame
-                        var iframe = document.createElement('iframe');
-                        iframe.src = iframeUrl;
-                        iframe.style.width = "100%";
-                        iframe.style.height = "100%";
-                        iframe.style.border = "none";
-                        
-                        container.appendChild(iframe);
-                        
-                        // 5. Cleanup
-                        if (overlay) overlay.style.display = 'none';
-                        isRendered = true;
-                    })
-                    .catch(function(err) {
-                        console.error("BRIDGE: Authentication Failed", err);
-                        status.innerText = "Session Error: " + err.message;
-                        
-                        // Fallback: Try Global Geotab Object (Last Resort)
-                        if (window.geotab && window.geotab.getSession) {
-                            console.log("BRIDGE: Attempting global fallback...");
-                            window.geotab.getSession(function(s) {
-                                // Mock the promise success to retry
-                                apiService.getSession = function() { return Promise.resolve(s); };
-                                renderDashboard(); 
-                            });
+                    var iframeUrl = DASHBOARD_URL + 
+                                    "?userName=" + encodeURIComponent(session.userName) + 
+                                    "&sessionId=" + encodeURIComponent(session.sessionId) + 
+                                    "&database=" + encodeURIComponent(session.database) + 
+                                    "&server=" + encodeURIComponent(server) +
+                                    "&groups=" + encodeURIComponent(groupIds); // Initial Load
+
+                    var iframe = document.createElement('iframe');
+                    iframe.src = iframeUrl;
+                    iframe.style.width = "100%";
+                    iframe.style.height = "100%";
+                    iframe.style.border = "none";
+                    
+                    container.appendChild(iframe);
+                    iframeRef = iframe; // Save reference
+                    
+                    if (overlay) overlay.style.display = 'none';
+                    isRendered = true;
+
+                    // --- LISTENER: WATCH FOR FILTER CHANGES ---
+                    // This fires when user changes the group dropdown in MyGeotab
+                    pageService.attach('filterChange', function(data) {
+                        console.log("BRIDGE: Filter Changed!", data);
+                        // data.groups contains the new array of groups
+                        if (data && data.groups) {
+                            sendGroupUpdate(data.groups);
                         }
                     });
+
+                }).catch(function(err) {
+                    console.error("BRIDGE: Init Failed", err);
+                });
             };
 
-            // --- AUTO-START ---
-            // Execute immediately to bypass potential Map initialization delays
             setTimeout(renderDashboard, 500);
 
-            // --- LIFECYCLE HANDLERS ---
             return {
-                initialize: function (api, state, callback) {
-                    console.log("BRIDGE: Lifecycle - Initialize");
-                    renderDashboard();
-                    if (callback) callback();
-                },
-                focus: function (api, state) {
-                    console.log("BRIDGE: Lifecycle - Focus");
-                    renderDashboard();
-                },
-                blur: function () { 
-                    console.log("BRIDGE: Lifecycle - Blur");
-                }
+                initialize: function (api, state, callback) { renderDashboard(); if (callback) callback(); },
+                focus: function (api, state) { renderDashboard(); },
+                blur: function () { }
             };
         };
 
-        // --- REGISTRATION ---
-        // Register the Add-In under the namespace defined in config.json
-        // Name in Config: "Fleet Status Overview" -> Geotab looks for: fleetStatusOverview
         geotab.addin.fleetStatusOverview = fleetStatusAddin;
-        
-        // Legacy alias for backward compatibility during testing
         geotab.addin.myMetrics = fleetStatusAddin;
-
     </script>
 </body>
 </html>
