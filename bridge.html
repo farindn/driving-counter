@@ -14,12 +14,17 @@
     </div>
 
     <script type="text/javascript">
+        /**
+         * GEOTAB MAP ADD-IN BRIDGE
+         * standardizes authentication and filter synchronization between 
+         * MyGeotab (Parent) and React Dashboard (IFrame).
+         */
         var fleetStatusAddin = function (element, services) {
             
             // CONFIGURATION
             var DASHBOARD_URL = "https://farindn.github.io/vehicle-status-addin/dashboard.html"; 
             
-            // SECURITY: Define the exact allowed origin
+            // SECURITY: Define the exact allowed origin for postMessage
             var TARGET_ORIGIN = new URL(DASHBOARD_URL).origin;
 
             var isRendered = false;
@@ -28,13 +33,14 @@
             var apiService = (services && services.api) ? services.api : null;
             var pageService = (services && services.page) ? services.page : null;
 
-            // --- HELPER: FORMAT & SEND ---
+            // --- HELPER: FETCH & PROPAGATE GROUPS ---
             var fetchAndSendGroups = function() {
                 if (!pageService || !iframeRef) return;
 
+                // Explicitly fetch latest filter state
                 pageService.getFilterState().then(function(groups) {
                     var groupIds = groups.map(function(g) { return g.id; }).join(",");
-                    console.log("BRIDGE: Sending Group Update:", groupIds);
+                    console.log("BRIDGE: Propagating Group Filter:", groupIds);
 
                     iframeRef.contentWindow.postMessage({
                         type: "FILTER_UPDATE",
@@ -54,6 +60,7 @@
                 if (!container) { setTimeout(renderDashboard, 200); return; }
                 if (!apiService || !pageService) return;
 
+                // INITIAL LOAD: Parallel Fetch of Session & Groups
                 Promise.all([
                     apiService.getSession(),
                     pageService.getFilterState()
@@ -82,9 +89,10 @@
                     if (overlay) overlay.style.display = 'none';
                     isRendered = true;
 
-                    // --- ROBUST LISTENER ---
+                    // --- LISTENER: WATCH FOR FILTER CHANGES ---
+                    // Triggers when user changes groups in MyGeotab top bar
                     pageService.attach('filterChange', function(event) {
-                        console.log("BRIDGE: Filter change detected. Fetching new state...");
+                        console.log("BRIDGE: Filter change detected. Syncing...");
                         fetchAndSendGroups();
                     });
 
@@ -93,6 +101,7 @@
                 });
             };
 
+            // Auto-start to bypass initialization race conditions
             setTimeout(renderDashboard, 500);
 
             return {
@@ -103,8 +112,7 @@
         };
 
         geotab.addin.fleetStatusOverview = fleetStatusAddin;
-        geotab.addin.myMetrics = fleetStatusAddin;
+        geotab.addin.myMetrics = fleetStatusAddin; // Alias
     </script>
 </body>
 </html>
-
