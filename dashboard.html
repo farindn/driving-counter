@@ -10,130 +10,62 @@
     
     <style>
         :root {
-            /* Branding Colors */
-            --bg-color: #f5f7fa;        /* Soft Blue-Grey */
-            --color-primary: #25457B;   /* Geotab Navy */
-            --color-accent: #00B8FF;    /* Cyan Highlight */
-            --color-white: #FFFFFF;     /* Card Background */
-            --color-slate: #607690;     /* Secondary Text */
-            
-            /* Status Indicators */
-            --color-success: #13AA09;   /* Green (Driving) */
-            --color-error: #FE4A3F;     /* Red (Offline) */
-            --color-warning: #ff9800;   /* Orange (Stopped) */
-
-            /* UI Effects */
+            --bg-color: #f5f7fa;
+            --color-primary: #25457B;
+            --color-white: #FFFFFF;
+            --color-slate: #607690;
+            --color-success: #13AA09; /* Driving */
+            --color-error: #FE4A3F;   /* Not Communicating */
+            --color-warning: #ff9800; /* Stopped */
             --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.05);
-            --shadow-hover: 0 4px 12px rgba(0, 0, 0, 0.08);
             --radius: 8px;
         }
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: var(--bg-color);
-            color: #333;
-            height: 100vh;
-            box-sizing: border-box;
-            overflow: hidden; 
+            margin: 0; padding: 20px; background-color: var(--bg-color);
+            color: #333; height: 100vh; box-sizing: border-box; overflow: hidden; 
         }
 
-        /* Header Styling */
         h2 {
-            font-size: 1.25rem; 
-            font-weight: 600;
-            margin: 0 0 20px 0;
-            color: var(--color-primary);
-            border-bottom: 2px solid rgba(37, 69, 123, 0.1);
-            padding-bottom: 10px;
+            font-size: 1.25rem; font-weight: 600; margin: 0 0 20px 0;
+            color: var(--color-primary); border-bottom: 2px solid rgba(37, 69, 123, 0.1); padding-bottom: 10px;
         }
 
-        /* Grid Layout */
         .dashboard-container {
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            max-width: 800px;
-            margin: 0 auto;
+            height: 100%; display: flex; flex-direction: column; max-width: 800px; margin: 0 auto;
         }
 
         .metrics-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
+            display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
         }
 
-        /* Metric Cards */
         .metric-card {
-            background: var(--color-white);
-            border-radius: var(--radius);
-            padding: 24px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            box-shadow: var(--shadow-card);
-            position: relative;
-            transition: all 0.2s ease-in-out;
-            cursor: default;
+            background: var(--color-white); border-radius: var(--radius); padding: 24px;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            box-shadow: var(--shadow-card); position: relative; cursor: default;
         }
 
-        .metric-card:hover {
-            transform: translateY(-2px);
-            box-shadow: var(--shadow-hover);
-        }
-
-        /* Top Color Bar */
         .metric-card::after {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 4px;
+            content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 4px;
         }
         .card-total::after { background: var(--color-primary); }
         .card-good::after { background: var(--color-success); }
         .card-warn::after { background: var(--color-warning); }
         .card-bad::after { background: var(--color-error); }
 
-        /* Values & Labels */
         .kpi-value {
-            font-size: 2.5rem;
-            font-weight: 700;
-            margin-bottom: 8px;
-            line-height: 1;
-            color: #333;
+            font-size: 2.5rem; font-weight: 700; margin-bottom: 8px; line-height: 1; color: #333;
         }
         .kpi-label {
-            font-size: 0.9rem;
-            color: var(--color-slate);
-            font-weight: 500;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            font-size: 0.9rem; color: var(--color-slate); font-weight: 500; text-transform: uppercase;
         }
 
-        /* Loading & Error States */
+        /* States */
         .status-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            color: var(--color-slate);
-            text-align: center;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--color-slate); text-align: center;
         }
-        .error-box {
-            color: var(--color-error);
-            background: #FFF5F5;
-            border: 1px solid #FFDCDC;
-            border-radius: var(--radius);
-            padding: 20px;
-        }
-        .debug-text {
-            font-size: 0.75rem;
-            font-family: monospace;
-            opacity: 0.7;
-            margin-top: 10px;
-        }
+        .debug-text { font-size: 0.75rem; font-family: monospace; opacity: 0.7; margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -148,9 +80,7 @@
             const [loading, setLoading] = useState(true);
             const [error, setError] = useState(null);
 
-            // --- DATA FETCHING ---
             useEffect(() => {
-                // 1. Extract session credentials from URL (passed by Bridge)
                 const params = new URLSearchParams(window.location.search);
                 const server = params.get('server');
                 const database = params.get('database');
@@ -158,27 +88,22 @@
                 const userName = params.get('userName');
 
                 if (!server || !sessionId) {
-                    setError("Session credentials missing in URL.");
+                    setError("Session credentials missing.");
                     setLoading(false);
                     return;
                 }
 
-                // 2. Prepare JSON-RPC Request
+                // API: Get DeviceStatusInfo
                 const rpcUrl = `https://${server}/apiv1`;
                 const payload = {
                     method: "Get",
                     params: {
                         typeName: "DeviceStatusInfo",
                         search: {}, // Fetch ALL visible devices
-                        credentials: {
-                            database: database,
-                            sessionId: sessionId,
-                            userName: userName
-                        }
+                        credentials: { database, sessionId, userName }
                     }
                 };
 
-                // 3. Execute Fetch
                 const fetchData = async () => {
                     try {
                         const response = await fetch(rpcUrl, {
@@ -186,9 +111,7 @@
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(payload)
                         });
-
                         const json = await response.json();
-
                         if (json.error) throw new Error(json.error.message);
 
                         setDeviceData(json.result || []);
@@ -203,29 +126,38 @@
                 fetchData();
             }, []);
 
-            // --- METRIC CALCULATION ---
+            // --- REFINED METRIC LOGIC ---
             const metrics = useMemo(() => {
-                let total = 0, started = 0, stopped = 0, offline = 0;
+                let total = 0;
+                let started = 0;
+                let stopped = 0;
+                let notCommunicating = 0;
 
                 deviceData.forEach(d => {
                     total++;
-                    const isComm = d.isDeviceCommunicating !== false; 
-                    const isDriving = d.isDriving === true;
+
+                    // Logic Check:
+                    // 1. Check Communication first. If offline, it goes to 'Not Communicating'.
+                    // 2. If Online, check Driving status.
+                    
+                    const isComm = d.isDeviceCommunicating; // Boolean
+                    const isDriving = d.isDriving; // Boolean
 
                     if (!isComm) {
-                        offline++;
-                    } else if (isDriving) {
-                        started++;
+                        // Device is Offline / Not Communicating
+                        notCommunicating++;
                     } else {
-                        stopped++;
+                        // Device is Communicating
+                        if (isDriving) {
+                            started++;
+                        } else {
+                            stopped++;
+                        }
                     }
                 });
-                return { total, started, stopped, offline };
+                return { total, started, stopped, notCommunicating };
             }, [deviceData]);
 
-            // --- RENDER STATES ---
-            
-            // 1. Loading
             if (loading) {
                 return (
                     <div className="status-container">
@@ -235,22 +167,19 @@
                 );
             }
 
-            // 2. Error
             if (error) {
                 return (
                     <div className="status-container">
-                        <div className="error-box">
-                            <strong>Connection Error</strong>
-                            <div className="debug-text">{error}</div>
-                        </div>
+                        <div style={{color: 'var(--color-error)'}}><strong>Connection Error</strong></div>
+                        <div className="debug-text">{error}</div>
                     </div>
                 );
             }
 
-            // 3. Success (Dashboard)
             return (
                 <div className="dashboard-container">
-                    <h2>Fleet Status Overview</h2>
+                    
+                    <h2>Fleet Status</h2>
                     
                     <div className="metrics-grid">
                         {/* Total Vehicles */}
@@ -259,21 +188,21 @@
                             <div className="kpi-label">Total Fleet</div>
                         </div>
 
-                        {/* Started (Green) */}
+                        {/* Vehicles Started (Driving) */}
                         <div className="metric-card card-good">
                             <div className="kpi-value" style={{color: 'var(--color-success)'}}>{metrics.started}</div>
-                            <div className="kpi-label">Active / Driving</div>
+                            <div className="kpi-label">Driving</div>
                         </div>
 
-                        {/* Stopped (Orange) */}
+                        {/* Vehicles Stopped */}
                         <div className="metric-card card-warn">
                             <div className="kpi-value" style={{color: 'var(--color-warning)'}}>{metrics.stopped}</div>
                             <div className="kpi-label">Stopped</div>
                         </div>
 
-                        {/* Offline (Red) */}
+                        {/* Not Communicating */}
                         <div className="metric-card card-bad">
-                            <div className="kpi-value" style={{color: 'var(--color-error)'}}>{metrics.offline}</div>
+                            <div className="kpi-value" style={{color: 'var(--color-error)'}}>{metrics.notCommunicating}</div>
                             <div className="kpi-label">Offline</div>
                         </div>
                     </div>
@@ -292,4 +221,3 @@
     </script>
 </body>
 </html>
-
